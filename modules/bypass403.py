@@ -26,10 +26,157 @@ import itertools
 from typing import List, Dict, Set, Callable, Optional, Tuple
 from dataclasses import dataclass, field
 from urllib.parse import urlparse, quote, unquote, urlencode
+import re
 from .utils import (
     AsyncHTTPClient, ScanResult, normalize_url,
     colorize, format_time, USER_AGENTS
 )
+
+# ==================== FALSE POSITIVE DETECTION ====================
+# Patterns that indicate a false positive (error page, not real content)
+FALSE_POSITIVE_PATTERNS = [
+    # Generic error messages
+    r"page\s*(not|doesn't)\s*exist",
+    r"(404|not)\s*found",
+    r"invalid\s*(url|path|request|page)",
+    r"please\s*(visit|go\s*to|return\s*to)\s*(the\s*)?(home|main|index)",
+    r"(redirect|redirecting)\s*to\s*(home|main|index)",
+    r"(error|err)\s*(page|occurred|happened)",
+    r"(access|permission)\s*(denied|forbidden|restricted)",
+    r"(unauthorized|not\s*authorized)",
+    r"(something\s*went\s*wrong)",
+    r"(oops|sorry).{0,50}(error|wrong|problem)",
+    r"(this\s*page|resource)\s*(is\s*)?(not\s*available|unavailable)",
+    r"(bad\s*request|malformed)",
+    r"(request\s*failed|connection\s*refused)",
+    r"(url\s*not\s*valid|invalid\s*endpoint)",
+    r"(go\s*back|return)\s*(home|to\s*homepage)",
+    # Empty or placeholder content
+    r"^\s*$",  # Empty
+    r"^[\s\n\r\t]*$",  # Whitespace only
+    r"<title>\s*(error|404|403|forbidden|not\s*found|access\s*denied)",
+    r"<h1>\s*(error|404|403|forbidden|not\s*found|access\s*denied)",
+    # Default server error pages
+    r"nginx\s*error",
+    r"apache\s*error",
+    r"iis\s*error",
+    r"tomcat\s*error",
+    r"jetty\s*error",
+    # Redirect indicators
+    r"you\s*(are|will)\s*be\s*redirect",
+    r"click\s*here\s*if\s*(you\s*are\s*)?(not\s*)?(auto)?redirect",
+    r"window\.location\s*=",
+    r"meta\s+http-equiv\s*=\s*['\"]refresh['\"]",
+    r"location\.href\s*=",
+    r"location\.replace\s*\(",
+    # Login/Auth pages (not a bypass if it shows login)
+    r"<form[^>]*login",
+    r"<input[^>]*type\s*=\s*['\"]password['\"]",
+    r"sign\s*in\s*to\s*(continue|access)",
+    r"login\s*required",
+    r"authentication\s*required",
+    r"please\s*(log\s*in|sign\s*in|authenticate)",
+    # Default/blank pages
+    r"^<!DOCTYPE[^>]*>\s*<html[^>]*>\s*<head[^>]*>\s*</head>\s*<body[^>]*>\s*</body>\s*</html>\s*$",
+    r"welcome\s*to\s*(nginx|apache|iis)",
+    r"it\s*works!",
+    r"test\s*page",
+    r"under\s*construction",
+    r"coming\s*soon",
+    # WAF/Security blocks
+    r"access\s*(has\s*been\s*)?(blocked|denied)",
+    r"(security|firewall)\s*(check|verification)",
+    r"(cloudflare|akamai|incapsula|sucuri)",
+    r"captcha",
+    r"checking\s*your\s*browser",
+    r"ray\s*id",  # Cloudflare
+]
+
+# Additional patterns for detecting soft 404s and redirects
+SOFT_404_PATTERNS = [
+    r"the\s*(page|resource|content)\s*(you\s*(are\s*)?looking\s*for|requested)",
+    r"(could|can)\s*not\s*(be\s*)?(found|located)",
+    r"no\s*(results?|match|content)\s*(found|available)",
+    r"(try|check)\s*(again|later|the\s*url)",
+    r"return\s*to\s*(previous|last)\s*page",
+    r"(home|main)\s*page",
+]
+
+# Patterns indicating legitimate content (positive indicators)
+LEGITIMATE_CONTENT_PATTERNS = [
+    r"<table[^>]*>.*</table>",  # Data tables
+    r"<form[^>]*action\s*=",  # Forms with actions (not login)
+    r"class\s*=\s*['\"].*?(admin|dashboard|panel|config|settings)",
+    r"<nav[^>]*>.*</nav>",  # Navigation menus
+    r"<aside[^>]*>.*</aside>",  # Sidebars
+    r"\$\{|\{\{|\{%",  # Template variables (might indicate app content)
+    r"api[_-]?key|secret|token|password|credential",  # Sensitive data
+    r"(database|db|mysql|postgres|mongo)",
+    r"(private|internal|confidential)",
+]
+
+# Compiled regex for performance
+FALSE_POSITIVE_REGEX = [re.compile(p, re.IGNORECASE) for p in FALSE_POSITIVE_PATTERNS]
+
+# ==================== SENSITIVE DATA PATTERNS ====================
+SENSITIVE_PATTERNS = {
+    "api_key": [
+        r"(?i)(api[_-]?key|apikey)\s*[=:]\s*['\"]?([a-zA-Z0-9_\-]{16,})",
+        r"(?i)(access[_-]?token|auth[_-]?token)\s*[=:]\s*['\"]?([a-zA-Z0-9_\-\.]{20,})",
+    ],
+    "password": [
+        r"(?i)(password|passwd|pwd)\s*[=:]\s*['\"]?([^\s'\"]{4,})",
+        r"(?i)(secret|secret[_-]?key)\s*[=:]\s*['\"]?([^\s'\"]{8,})",
+    ],
+    "database": [
+        r"(?i)(db[_-]?password|database[_-]?password)\s*[=:]\s*['\"]?([^\s'\"]+)",
+        r"(?i)(mysql|postgres|mongodb|redis)://[^\s]+",
+        r"(?i)jdbc:[a-z]+://[^\s]+",
+    ],
+    "aws": [
+        r"(?i)AKIA[0-9A-Z]{16}",  # AWS Access Key ID
+        r"(?i)(aws[_-]?secret|secret[_-]?access[_-]?key)\s*[=:]\s*['\"]?([a-zA-Z0-9/+=]{40})",
+    ],
+    "private_key": [
+        r"-----BEGIN\s*(RSA|DSA|EC|OPENSSH|PRIVATE)\s*KEY-----",
+        r"-----BEGIN\s*PGP\s*PRIVATE\s*KEY",
+    ],
+    "jwt_token": [
+        r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+",  # JWT format
+    ],
+    "email": [
+        r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+    ],
+    "ip_address": [
+        r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b",
+    ],
+    "credit_card": [
+        r"\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b",
+    ],
+    "ssn": [
+        r"\b\d{3}-\d{2}-\d{4}\b",  # SSN format XXX-XX-XXXX
+    ],
+    "phone": [
+        r"\b(?:\+1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}\b",
+    ],
+    "admin_path": [
+        r"(?i)/admin[^\s]*",
+        r"(?i)/dashboard[^\s]*",
+        r"(?i)/config[^\s]*",
+        r"(?i)/settings[^\s]*",
+    ],
+    "internal_url": [
+        r"(?i)(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[01])\.\d+\.\d+)[:/][^\s]*",
+    ],
+    "file_path": [
+        r"(?i)(/etc/passwd|/etc/shadow|/var/log|/home/[a-z]+)",
+        r"(?i)(c:\\windows|c:\\users|c:\\program)",
+    ],
+    "debug_info": [
+        r"(?i)(stack\s*trace|traceback|exception|error\s*at\s*line)",
+        r"(?i)(debug\s*mode|debug\s*=\s*true|debug_enabled)",
+    ],
+}
 
 @dataclass
 class BypassResult:
@@ -41,13 +188,20 @@ class BypassResult:
     status_code: int
     original_status: int = 403
     content_length: int = 0
+    original_content_length: int = 0  # For comparison
     response_time: float = 0.0
     headers_used: Dict = field(default_factory=dict)
     method_used: str = "GET"
     is_bypass: bool = False
+    is_verified: bool = False  # True if verified as genuine bypass
     evidence: str = ""
     confidence: str = "low"  # low, medium, high
     content_hash: str = ""
+    sensitive_data: List = field(default_factory=list)  # Extracted sensitive info
+    reproduction_steps: List = field(default_factory=list)  # Manual steps
+    page_title: str = ""
+    content_preview: str = ""
+    false_positive_reason: str = ""  # Why it was flagged as false positive
 
 
 class Bypass403:
@@ -543,7 +697,7 @@ class Bypass403:
     async def _make_request(self, url: str, method: str = "GET",
                            headers: Dict = None, technique: str = "",
                            category: str = "") -> Optional[BypassResult]:
-        """Make a single bypass attempt"""
+        """Make a single bypass attempt with enhanced verification"""
         self.stats["total_attempts"] += 1
 
         try:
@@ -569,6 +723,9 @@ class Bypass403:
                     content = await response.text()
                     content_hash = hashlib.md5(content.encode()).hexdigest()
 
+                    # Get original content length for comparison
+                    original_length = self.original_response.response_length if self.original_response else 0
+
                     result = BypassResult(
                         original_url=self.target_url,
                         bypass_url=url,
@@ -577,16 +734,35 @@ class Bypass403:
                         status_code=response.status,
                         original_status=self.original_response.status_code if self.original_response else 403,
                         content_length=len(content),
+                        original_content_length=original_length,
                         headers_used=headers or {},
                         method_used=method,
                         content_hash=content_hash
                     )
 
-                    # Check if bypass successful
-                    if self._is_bypass_successful(result):
+                    # Check if bypass successful with false positive detection
+                    if self._is_bypass_successful(result, content):
                         result.is_bypass = True
-                        result.confidence = self._calculate_confidence(result)
+                        result.is_verified = True
+
+                        # Extract page title
+                        result.page_title = self._extract_page_title(content)
+
+                        # Extract sensitive data from bypassed content
+                        result.sensitive_data = self._extract_sensitive_data(content)
+
+                        # Calculate confidence with content analysis
+                        result.confidence = self._calculate_confidence(result, content)
+
+                        # Extract evidence
                         result.evidence = self._extract_evidence(content)
+
+                        # Store content preview
+                        result.content_preview = content[:2000]
+
+                        # Generate reproduction steps
+                        result.reproduction_steps = self._generate_reproduction_steps(result)
+
                         self.successful_bypasses.append(result)
                         self.stats["successful_bypasses"] += 1
 
@@ -595,7 +771,13 @@ class Bypass403:
                             "category": category,
                             "url": url,
                             "status": result.status_code,
-                            "confidence": result.confidence
+                            "confidence": result.confidence,
+                            "verified": result.is_verified,
+                            "page_title": result.page_title,
+                            "content_length": result.content_length,
+                            "original_content_length": result.original_content_length,
+                            "sensitive_data_count": len(result.sensitive_data),
+                            "reproduction_steps": result.reproduction_steps
                         })
 
                     return result
@@ -604,12 +786,17 @@ class Bypass403:
             self.stats["errors"] += 1
             return None
 
-    def _is_bypass_successful(self, result: BypassResult) -> bool:
-        """Determine if bypass was successful"""
+    def _is_bypass_successful(self, result: BypassResult, content: str) -> bool:
+        """Determine if bypass was successful with false positive detection"""
         # Status code changed from 403/401 to 200
         if result.original_status in [401, 403] and result.status_code == 200:
             # Check content is different (not false positive)
             if result.content_hash != self.original_hash:
+                # Verify it's not a false positive
+                is_false_positive, reason = self._detect_false_positive(content)
+                if is_false_positive:
+                    result.false_positive_reason = reason
+                    return False
                 return True
 
         # Status code changed to redirect (potential bypass)
@@ -618,19 +805,291 @@ class Bypass403:
 
         return False
 
-    def _calculate_confidence(self, result: BypassResult) -> str:
-        """Calculate bypass confidence level"""
+    def _detect_false_positive(self, content: str, response_headers: Dict = None) -> Tuple[bool, str]:
+        """
+        Advanced false positive detection with multi-layer analysis
+        Returns: (is_false_positive, reason)
+        """
+        if not content:
+            return True, "Empty response body"
+
+        content_stripped = content.strip()
+
+        # Check 1: Content length thresholds
+        if len(content_stripped) < 100:
+            return True, f"Content too short ({len(content_stripped)} bytes)"
+
+        # Check 2: Empty HTML structure
+        html_body_match = re.search(r'<body[^>]*>(.*?)</body>', content, re.IGNORECASE | re.DOTALL)
+        if html_body_match:
+            body_content = html_body_match.group(1).strip()
+            # Strip HTML tags from body
+            body_text = re.sub(r'<[^>]+>', '', body_content)
+            body_text = re.sub(r'\s+', ' ', body_text).strip()
+            if len(body_text) < 50:
+                return True, f"Empty or minimal body content ({len(body_text)} chars of text)"
+
+        # Check 3: False positive patterns
+        content_lower = content.lower()
+        for pattern in FALSE_POSITIVE_REGEX:
+            try:
+                match = pattern.search(content_lower)
+                if match:
+                    matched_text = match.group(0)[:60]
+                    return True, f"Error pattern: '{matched_text}'"
+            except:
+                continue
+
+        # Check 4: Soft 404 patterns
+        for pattern in SOFT_404_PATTERNS:
+            try:
+                if re.search(pattern, content_lower):
+                    return True, f"Soft 404 detected"
+            except:
+                continue
+
+        # Check 5: Meta refresh redirect
+        meta_refresh = re.search(r'<meta[^>]*http-equiv\s*=\s*["\']?refresh["\']?[^>]*content\s*=\s*["\']?\d+;\s*url\s*=', content, re.IGNORECASE)
+        if meta_refresh:
+            return True, "Meta refresh redirect detected"
+
+        # Check 6: JavaScript redirect
+        js_redirect_patterns = [
+            r'window\.location\s*=',
+            r'location\.href\s*=',
+            r'location\.replace\s*\(',
+            r'window\.location\.replace\s*\(',
+            r'document\.location\s*=',
+        ]
+        for pattern in js_redirect_patterns:
+            if re.search(pattern, content):
+                return True, "JavaScript redirect detected"
+
+        # Check 7: Page title analysis
+        title_match = re.search(r'<title[^>]*>([^<]+)</title>', content, re.IGNORECASE)
+        if title_match:
+            title = title_match.group(1).lower().strip()
+            error_titles = [
+                'error', '404', '403', 'forbidden', 'not found', 'access denied',
+                'unauthorized', 'permission denied', 'page not found', 'invalid',
+                'redirect', 'login', 'sign in', 'authenticate'
+            ]
+            for error in error_titles:
+                if error in title:
+                    return True, f"Error/auth page title: '{title[:50]}'"
+
+        # Check 8: Compare with homepage content similarity
+        # If the content is too similar to what a homepage would have
+        homepage_indicators = [
+            r'welcome\s+to\s+our',
+            r'<header[^>]*class\s*=\s*["\'].*main.*header',
+            r'<footer[^>]*class\s*=\s*["\'].*main.*footer',
+        ]
+
+        # Check 9: Content hash comparison with original
+        # If content is same as original 403, it's a false positive
+        if hasattr(self, 'original_hash') and self.original_hash:
+            current_hash = hashlib.md5(content.encode()).hexdigest()
+            if current_hash == self.original_hash:
+                return True, "Content identical to original 403 response"
+
+        # Check 10: Look for positive indicators (legitimate content)
+        has_positive_indicators = False
+        for pattern in LEGITIMATE_CONTENT_PATTERNS:
+            try:
+                if re.search(pattern, content, re.IGNORECASE | re.DOTALL):
+                    has_positive_indicators = True
+                    break
+            except:
+                continue
+
+        # If no positive indicators and content is small, mark as suspicious
+        if not has_positive_indicators and len(content_stripped) < 500:
+            # Double check - extract text content
+            text_only = re.sub(r'<[^>]+>', '', content)
+            text_only = re.sub(r'\s+', ' ', text_only).strip()
+            # Check if most of text is generic
+            generic_words = ['click', 'here', 'back', 'home', 'return', 'error', 'page']
+            word_count = len(text_only.split())
+            generic_count = sum(1 for word in text_only.lower().split() if word in generic_words)
+            if word_count > 0 and generic_count / word_count > 0.3:
+                return True, "Content appears to be generic error/redirect page"
+
+        return False, ""
+
+    def _calculate_confidence(self, result: BypassResult, content: str) -> str:
+        """Calculate bypass confidence level with content analysis"""
         if result.status_code == 200:
-            if result.content_length > 500:
-                return "high"
+            # High confidence if:
+            # 1. Content is substantial
+            # 2. Contains sensitive data
+            # 3. Has meaningful page title (not error)
+            # 4. Significantly different from original
+            score = 0
+
+            if result.content_length > 1000:
+                score += 3
+            elif result.content_length > 500:
+                score += 2
             elif result.content_length > 100:
+                score += 1
+
+            # Check if sensitive data was found
+            if result.sensitive_data:
+                score += 3
+
+            # Check content length difference
+            if self.original_response:
+                length_diff = abs(result.content_length - self.original_response.response_length)
+                if length_diff > 500:
+                    score += 2
+
+            # Check for admin/dashboard keywords
+            admin_keywords = ['admin', 'dashboard', 'panel', 'control', 'settings', 'config', 'manage', 'users']
+            content_lower = content.lower()
+            for keyword in admin_keywords:
+                if keyword in content_lower:
+                    score += 1
+                    break
+
+            if score >= 5:
+                return "high"
+            elif score >= 3:
                 return "medium"
+
         return "low"
 
     def _extract_evidence(self, content: str) -> str:
         """Extract evidence from response"""
-        # Get first 200 chars of content
-        return content[:200].replace('\n', ' ').strip()
+        # Get first 500 chars of content, cleaned up
+        evidence = content[:500].replace('\n', ' ').replace('\r', ' ').strip()
+        # Remove excessive whitespace
+        evidence = re.sub(r'\s+', ' ', evidence)
+        return evidence
+
+    def _extract_page_title(self, content: str) -> str:
+        """Extract page title from HTML content"""
+        title_match = re.search(r'<title[^>]*>([^<]+)</title>', content, re.IGNORECASE)
+        if title_match:
+            return title_match.group(1).strip()[:100]
+        return ""
+
+    def _extract_sensitive_data(self, content: str) -> List[Dict]:
+        """Extract sensitive data from bypassed page content"""
+        findings = []
+
+        for category, patterns in SENSITIVE_PATTERNS.items():
+            for pattern in patterns:
+                try:
+                    matches = re.findall(pattern, content, re.IGNORECASE)
+                    for match in matches[:5]:  # Limit to 5 matches per pattern
+                        if isinstance(match, tuple):
+                            value = match[-1] if len(match) > 1 else match[0]
+                        else:
+                            value = match
+
+                        # Mask sensitive data partially
+                        if len(str(value)) > 8:
+                            masked = value[:4] + '*' * (len(value) - 8) + value[-4:]
+                        else:
+                            masked = value[:2] + '*' * (len(value) - 2)
+
+                        findings.append({
+                            "category": category,
+                            "pattern": pattern[:50],
+                            "value_masked": masked,
+                            "value_full": value,  # Full value for report
+                            "severity": self._get_sensitive_severity(category)
+                        })
+                except Exception:
+                    continue
+
+        # Deduplicate by value
+        seen = set()
+        unique_findings = []
+        for f in findings:
+            if f["value_full"] not in seen:
+                seen.add(f["value_full"])
+                unique_findings.append(f)
+
+        return unique_findings[:20]  # Limit total findings
+
+    def _get_sensitive_severity(self, category: str) -> str:
+        """Get severity level for sensitive data category"""
+        critical = ["private_key", "aws", "database", "password", "credit_card", "ssn"]
+        high = ["api_key", "jwt_token"]
+        medium = ["email", "internal_url", "file_path", "debug_info"]
+
+        if category in critical:
+            return "critical"
+        elif category in high:
+            return "high"
+        elif category in medium:
+            return "medium"
+        return "low"
+
+    def _generate_reproduction_steps(self, result: BypassResult) -> List[str]:
+        """Generate manual reproduction steps for the bypass"""
+        steps = []
+
+        # Step 1: Basic info
+        steps.append(f"1. Original URL that returned {result.original_status}: {result.original_url}")
+
+        # Step 2: Based on technique category
+        if result.category == "header_ip_spoof" or result.category == "header_url_rewrite" or "header" in result.category:
+            header_str = ", ".join([f'"{k}: {v}"' for k, v in result.headers_used.items()])
+            steps.append(f"2. Send a request with the following header(s): {header_str}")
+            steps.append(f"3. cURL command:")
+            curl_headers = " ".join([f'-H "{k}: {v}"' for k, v in result.headers_used.items()])
+            steps.append(f'   curl -i {curl_headers} "{result.bypass_url}"')
+
+        elif result.category == "path_manipulation" or result.category == "path_permutation":
+            steps.append(f"2. Modify the URL path to: {result.bypass_url}")
+            steps.append(f"3. cURL command:")
+            steps.append(f'   curl -i "{result.bypass_url}"')
+
+        elif result.category == "method_change":
+            steps.append(f"2. Send the request using HTTP method: {result.method_used}")
+            steps.append(f"3. cURL command:")
+            steps.append(f'   curl -i -X {result.method_used} "{result.bypass_url}"')
+
+        elif "iis" in result.category.lower():
+            steps.append(f"2. Insert IIS cookieless session token in the URL path")
+            steps.append(f"3. Bypass URL: {result.bypass_url}")
+            steps.append(f"4. cURL command:")
+            steps.append(f'   curl -i "{result.bypass_url}"')
+
+        elif "unicode" in result.category.lower():
+            steps.append(f"2. Replace path characters with Unicode equivalents")
+            steps.append(f"3. Bypass URL: {result.bypass_url}")
+            steps.append(f"4. cURL command (URL-encoded):")
+            steps.append(f'   curl -i "{result.bypass_url}"')
+
+        elif "trim" in result.category.lower():
+            steps.append(f"2. Append whitespace/trim characters to the path")
+            steps.append(f"3. Bypass URL: {result.bypass_url}")
+            steps.append(f"4. cURL command:")
+            steps.append(f'   curl -i "{result.bypass_url}"')
+
+        else:
+            steps.append(f"2. Access the bypass URL: {result.bypass_url}")
+            if result.headers_used:
+                header_str = ", ".join([f'"{k}: {v}"' for k, v in result.headers_used.items()])
+                steps.append(f"3. With headers: {header_str}")
+            steps.append(f"4. Using HTTP method: {result.method_used}")
+            curl_headers = " ".join([f'-H "{k}: {v}"' for k, v in result.headers_used.items()]) if result.headers_used else ""
+            steps.append(f"5. cURL command:")
+            steps.append(f'   curl -i -X {result.method_used} {curl_headers} "{result.bypass_url}"')
+
+        # Step: Expected result
+        steps.append(f"")
+        steps.append(f"Expected Result: HTTP {result.status_code} (was {result.original_status})")
+        steps.append(f"Response Size: {result.content_length} bytes (original: {result.original_content_length} bytes)")
+
+        if result.page_title:
+            steps.append(f"Page Title: {result.page_title}")
+
+        return steps
 
     async def _header_bypasses(self):
         """Try all header-based bypasses"""
